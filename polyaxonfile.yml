@@ -1,0 +1,50 @@
+version: 1
+kind: experiment
+build:
+    # image: docker.dm-ai.cn/algorithm-research/matteraux:latest
+    # image: docker.dm-ai.cn/algorithm-research/sfg:latest
+    image: docker.dm-ai.cn/algorithm-research/matteraux:v3090
+    # image: docker.dm-ai.cn/algorithm-research/matteraux:v1.6
+environment:
+    resources:
+        cpu:
+            requests: 1
+            limits: 2
+        gpu:
+            requests: 1
+            limits: 1
+    tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: nv3090
+          effect: "NoSchedule"
+        - key: "dm.ai/zone"
+          operator: "Equal"
+          value: gz2
+          effect: "NoSchedule"
+    node_selector:
+        dm.ai/zone: gz2
+    affinity:
+        nodeAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 80
+            preference:
+                matchExpressions:
+                - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - node3.atp
+
+run:
+    cmd: 
+        python3.6 -u r2r_src/train.py --upload --dataset R2R \
+        --maxAction 20 --log_every 500 \
+        --rl_ml_weight 1 \
+        --rl_ml_th 2
+        # --aug tasks/R2R/data/aug_paths.json
+        # --load snap/default/state_dict/best_val_unseen \
+        
+        # python3.6 -u r2r_src/train.py --upload --dataset SOON \
+        # --maxAction 20 --log_every 500 --det_loss
+        # --one_image --feedback teacher
+        # --rl_ml_weight 10

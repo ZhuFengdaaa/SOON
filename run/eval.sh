@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=1 python3.6 -u r2r_src/train.py --dataset SOON --maxAction 20 --log_every 500 --rl_ml_weight 1 --train validlistener --load ./snap/default/state_dict/best_val_unseen_house --submit
