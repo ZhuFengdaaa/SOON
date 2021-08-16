@@ -38,7 +38,7 @@ bash run/speaker.bash 0
 
 ### Agent Training
 ```
-python3.6 -u r2r_src/train.py --upload --dataset SOON --maxAction 20 --log_every 500 --rl_ml_weight 1
+python3.6 -u r2r_src/train.py --upload --dataset SOON --maxAction 20 --log_every 500 --rl_ml_weight 1 --det_loss True
 ```
 
 ### Evaluation
