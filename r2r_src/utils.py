@@ -128,9 +128,12 @@ def load_datasets(splits, dataset='R2R'):
                     for instr in read_data:
                         try:
                             paths = instr['path']
+                            if args.submit:
+                                scan = instr['scan']
+                            else:
+                                scan = instr['bboxes'][0]['scan']
                         except:
                             import ipdb; ipdb.set_trace()
-                        scan = instr['bboxes'][0]['scan']
                         for path in paths:
                             tmp_instr = copy.deepcopy(instr)
                             if args.one_image:

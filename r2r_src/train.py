@@ -291,12 +291,46 @@ def valid(train_env, tok, val_envs={}):
                 loss_str += ', %s: %.4f' % (metric, val)
             print(loss_str)
 
-        if args.submit:
-            json.dump(
-                result,
-                open(os.path.join(log_dir, "submit_%s.json" % env_name), 'w'),
-                sort_keys=True, indent=4, separators=(',', ': ')
-            )
+def submit():
+    setup(args.dataset)
+    # Create a batch training environment that will also preprocess text
+    vocab = read_vocab(train_vocab)
+    tok = Tokenizer(vocab=vocab, encoding_length=args.maxInput)
+    feat_dict = read_img_features(features)
+    featurized_scans = set([key.split("_")[0] for key in list(feat_dict.keys())])
+    split = 'test' # split = 'val_unseen_house' for unseen houses validation
+    # split = 'val_unseen_house'
+    env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok, \
+        dataset=args.dataset)
+    evaluator = Evaluation([split], featurized_scans, tok, dataset=args.dataset)
+    agent = Seq2SeqAgent(env, "", tok, args.maxAction, dataset=args.dataset)
+
+    if args.load is not None:
+        print("LOAD THE listener from %s" % args.load)
+        start_iter = agent.load(os.path.join(args.R2R_Aux_path, args.load))
+
+    agent.logs = defaultdict(list)
+    agent.set_env(env)
+
+    iters = None
+    agent.test(use_dropout=False, feedback='argmax', iters=iters)
+    result = agent.get_results()
+    json.dump(
+        result,
+        open(os.path.join(log_dir, "submit_%s.json" % split), 'w'),
+        sort_keys=True, indent=4, separators=(',', ': ')
+    )
+    score_summary, _ = evaluator.submit_score(result)
+    loss_str = "split: %s" % split
+    for metric,val in score_summary.items():
+        loss_str += ', %s: %.4f' % (metric, val)
+    print(loss_str)
+
+    # json.dump(
+    #     result,
+    #     open(os.path.join(log_dir, "submit_%s.json" % split), 'w'),
+    #     sort_keys=True, indent=4, separators=(',', ': ')
+    # )
 
 
 def beam_valid(train_env, tok, val_envs={}):
@@ -426,11 +460,6 @@ def train_val():
         val_env_names = ['val_unseen', 'val_seen']
     elif args.dataset == 'SOON':
         val_env_names = ['val_seen_instrs', 'val_unseen_instrs', 'val_unseen_house']
-    if args.submit:
-        val_env_names.append('test')
-    else:
-        pass
-        # val_env_names.append('train')
 
     if not args.beam:
         val_env_names.append("train")
@@ -535,7 +564,9 @@ def train_val_augment():
 
 
 if __name__ == "__main__":
-    if args.train in ['speaker', 'rlspeaker', 'validspeaker',
+    if args.submit: 
+        submit()
+    elif args.train in ['speaker', 'rlspeaker', 'validspeaker',
                       'listener', 'validlistener']:
         train_val()
     elif args.train == 'auglistener':

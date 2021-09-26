@@ -113,45 +113,58 @@ class R2RBatch():
             self.tok = tokenizer
         scans = []
         for split in splits:
+            items = load_datasets([split], dataset=dataset)
             for item in load_datasets([split], dataset=dataset):
                 # Split multiple instructions into separate entries
-                for j,instr in enumerate(item['instructions']):
-                    if dataset == 'R2R':
-                        item_scan = item['scan']
-                    elif dataset == 'SOON':
-                        item_scan = item['bboxes'][0]['scan']
-                    if item_scan not in self.env.featurized_scans:   # For fast training
-                        continue
+                if args.submit:
                     new_item = dict(item)
-                    new_item['instr_id'] = '%s_%d' % (item['path_id'], j)
-                    if dataset == 'R2R':
-                        new_item['instructions'] = instr
-                    elif dataset == 'SOON':
-                        gran_lv = args.abla_granularity
-                        obj_name = item["bboxes"][0]["obj_name"]
-                        obj_attr = instr[0]
-                        obj_relation = instr[1]
-                        obj_region = instr[2]
-                        obj_nb_region = instr[3]
-                        if gran_lv == 1:
-                            new_item['instructions'] = obj_name
-                        elif gran_lv == 2:
-                            new_item['instructions'] = obj_name + obj_attr
-                        elif gran_lv == 3:
-                            new_item['instructions'] = obj_name + obj_attr + obj_relation
-                        elif gran_lv == 4:
-                            new_item['instructions'] = obj_name + obj_attr + obj_relation + obj_region
-                        elif gran_lv == 5:
-                            new_item['instructions'] = obj_name + obj_attr + obj_relation + obj_region + obj_nb_region
-                        elif gran_lv == 6:
-                            new_item['instructions'] = instr[4]
-                        else:
-                            assert False, "invalid args.abla_granularity"
+                    item_scan = item['scan']
+                    if type(new_item['instructions'][0]) == list:
+                        new_item['instructions'] = new_item['instructions'][0]
+                    new_item['instructions'] = new_item['instructions'][4]
                     if tokenizer:
                         new_item['instr_encoding'] = tokenizer.encode_sentence(new_item['instructions'])
                     if not tokenizer or new_item['instr_encoding'] is not None:  # Filter the wrong data
                         self.data.append(new_item)
                         scans.append(item_scan)
+                else:
+                    for j,instr in enumerate(item['instructions']):
+                        if dataset == 'R2R':
+                            item_scan = item['scan']
+                        elif dataset == 'SOON':
+                            item_scan = item['bboxes'][0]['scan']
+                        if item_scan not in self.env.featurized_scans:   # For fast training
+                            continue
+                        new_item = dict(item)
+                        new_item['instr_id'] = '%s_%d' % (item['path_id'], j)
+                        if dataset == 'R2R':
+                            new_item['instructions'] = instr
+                        elif dataset == 'SOON':
+                            gran_lv = args.abla_granularity
+                            obj_name = item["bboxes"][0]["obj_name"]
+                            obj_attr = instr[0]
+                            obj_relation = instr[1]
+                            obj_region = instr[2]
+                            obj_nb_region = instr[3]
+                            if gran_lv == 1:
+                                new_item['instructions'] = obj_name
+                            elif gran_lv == 2:
+                                new_item['instructions'] = obj_name + obj_attr
+                            elif gran_lv == 3:
+                                new_item['instructions'] = obj_name + obj_attr + obj_relation
+                            elif gran_lv == 4:
+                                new_item['instructions'] = obj_name + obj_attr + obj_relation + obj_region
+                            elif gran_lv == 5:
+                                new_item['instructions'] = obj_name + obj_attr + obj_relation + obj_region + obj_nb_region
+                            elif gran_lv == 6:
+                                new_item['instructions'] = instr[4]
+                            else:
+                                assert False, "invalid args.abla_granularity"
+                        if tokenizer:
+                            new_item['instr_encoding'] = tokenizer.encode_sentence(new_item['instructions'])
+                        if not tokenizer or new_item['instr_encoding'] is not None:  # Filter the wrong data
+                            self.data.append(new_item)
+                            scans.append(item_scan)
         if name is None:
             self.name = splits[0] if len(splits) > 0 else "FAKE"
         else:
@@ -161,7 +174,10 @@ class R2RBatch():
         self.splits = splits
         self.seed = seed
         random.seed(self.seed)
-        random.shuffle(self.data)
+        if args.submit:
+            pass
+        else:
+            random.shuffle(self.data)
 
         self.ix = 0
         self.batch_size = batch_size
@@ -458,7 +474,10 @@ class R2RBatch():
             viewpointIds = [item['path'][0] for item in self.batch]
             headings = [item['heading'] for item in self.batch]
         elif self.dataset == 'SOON':
-            scanIds = [item['bboxes'][0]['scan'] for item in self.batch]
+            if args.submit:
+                scanIds = [item['scan'] for item in self.batch]
+            else:
+                scanIds = [item['bboxes'][0]['scan'] for item in self.batch]
             viewpointIds = [item['path'][0] for item in self.batch]
             headings = [1.52 for item in self.batch]
             # headings = [item['heading'] for item in self.batch]
