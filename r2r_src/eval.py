@@ -274,9 +274,9 @@ class Evaluation(object):
 def eval_simple_agents():
     ''' Run simple baselines on each split. '''
     if DATASET == 'R2R':
-        splits = ['train', 'val_seen', 'val_unseen', 'test']
+        splits = ['train', 'val_unseen', 'test']
     elif DATASET == 'SOON':
-        splits = ['train', 'val_seen_instrs', 'val_unseen_instrs', 'val_unseen_house', 'test']
+        splits = ['train', 'val_unseen_instrs', 'val_unseen_house', 'test']
     for split in splits:
         env = R2RBatch(None, batch_size=1, splits=[split], dataset=DATASET)
         ev = Evaluation([split])
@@ -298,9 +298,9 @@ def eval_seq2seq():
         RESULT_DIR + 'seq2seq_sample_imagenet_%s_iter_20000.json'
     ]
     if DATASET == 'R2R':
-        splits = ['val_seen', 'val_unseen']
+        splits = ['val_unseen']
     elif DATASET == 'SOON':
-        splits = ['val_seen_instrs', 'val_unseen_instrs', 'val_unseen_house']
+        splits = ['val_unseen_instrs', 'val_unseen_house']
     for outfile in outfiles:
         for split in splits:
             ev = Evaluation([split])

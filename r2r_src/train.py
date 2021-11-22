@@ -161,11 +161,9 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
     start = time.time()
 
     if args.dataset == 'R2R':
-        best_val = {'val_seen': {"accu": 0., "state":"", 'update':False},
-                    'val_unseen': {"accu": 0., "state":"", 'update':False}}
+        best_val = {'val_unseen': {"accu": 0., "state":"", 'update':False}}
     elif args.dataset == 'SOON':
-        best_val = {'val_seen_instrs': {"accu": 0., "state": "", 'update': False},
-                    'val_unseen_instrs': {"accu": 0., "state": "", 'update': False},
+        best_val = {'val_unseen_instrs': {"accu": 0., "state": "", 'update': False},
                     'val_unseen_house': {"accu": 0., "state": "", 'update': False}}
     if args.fast_train:
         log_every = 40
@@ -174,36 +172,36 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
         interval = min(log_every, start_iter+n_iters-idx)
         iter = idx + interval
 
-        # Train for log_every interval
-        if aug_env is None:     # The default training process
-            listner.set_env(train_env)
-            listner.train(interval, feedback=feedback_method)   # Train interval iters
-        else:
-            if args.accumulate_grad:
-                for _ in range(interval // 2):
-                    listner.zero_grad()
-                    listner.set_env(train_env)
+        # # Train for log_every interval
+        # if aug_env is None:     # The default training process
+        #     listner.set_env(train_env)
+        #     listner.train(interval, feedback=feedback_method)   # Train interval iters
+        # else:
+        #     if args.accumulate_grad:
+        #         for _ in range(interval // 2):
+        #             listner.zero_grad()
+        #             listner.set_env(train_env)
 
-                    # Train with GT data
-                    args.ml_weight = 0.2
-                    listner.accumulate_gradient(feedback_method)
-                    listner.set_env(aug_env) 
+        #             # Train with GT data
+        #             args.ml_weight = 0.2
+        #             listner.accumulate_gradient(feedback_method)
+        #             listner.set_env(aug_env) 
 
-                    # Train with Back Translation
-                    args.ml_weight = 0.6        # Sem-Configuration
-                    listner.accumulate_gradient(feedback_method, speaker=speaker)
-                    listner.optim_step()
-            else:
-                for _ in range(interval // 2):
-                    # Train with GT data
-                    listner.set_env(train_env)
-                    args.ml_weight = 0.2
-                    listner.train(1, feedback=feedback_method)
+        #             # Train with Back Translation
+        #             args.ml_weight = 0.6        # Sem-Configuration
+        #             listner.accumulate_gradient(feedback_method, speaker=speaker)
+        #             listner.optim_step()
+        #     else:
+        #         for _ in range(interval // 2):
+        #             # Train with GT data
+        #             listner.set_env(train_env)
+        #             args.ml_weight = 0.2
+        #             listner.train(1, feedback=feedback_method)
 
-                    # Train with Back Translation
-                    listner.set_env(aug_env)
-                    args.ml_weight = 0.6
-                    listner.train(1, feedback=feedback_method, speaker=speaker)
+        #             # Train with Back Translation
+        #             listner.set_env(aug_env)
+        #             args.ml_weight = 0.6
+        #             listner.train(1, feedback=feedback_method, speaker=speaker)
 
         # Log the training stats to tensorboard
         total = max(sum(listner.logs['total']), 1)
@@ -401,9 +399,9 @@ def setup(dataset='R2R'):
         write_vocab(build_vocab(splits=['train'], dataset=dataset), train_vocab)
     if not os.path.exists(trainval_vocab):
         if dataset == 'R2R':
-            splits = ['train','val_seen','val_unseen']
+            splits = ['train','val_unseen']
         elif dataset == 'SOON':
-            splits = ['train', 'val_seen_instrs', 'val_unseen_instrs', 'val_unseen_house']
+            splits = ['train', 'val_unseen_instrs', 'val_unseen_house']
         write_vocab(build_vocab(splits=splits, dataset=dataset), trainval_vocab)
 
 
@@ -423,9 +421,9 @@ def train_val():
     from collections import OrderedDict
 
     if args.dataset == 'R2R':
-        val_env_names = ['val_unseen', 'val_seen']
+        val_env_names = ['val_unseen']
     elif args.dataset == 'SOON':
-        val_env_names = ['val_seen_instrs', 'val_unseen_instrs', 'val_unseen_house']
+        val_env_names = ['val_unseen_instrs', 'val_unseen_house']
     if args.submit:
         val_env_names.append('test')
     else:
@@ -521,9 +519,9 @@ def train_val_augment():
     print("The average action length of the dataset is %0.4f." % (stats['path']))
 
     if args.dataset == 'R2R':
-        splits = ['train', 'val_seen', 'val_unseen']
+        splits = ['train', 'val_unseen']
     elif args.dataset == 'SOON':
-        splits = ['train', 'val_seen_instrs', 'val_unseen_instrs', 'val_unseen_house']
+        splits = ['train', 'val_unseen_instrs', 'val_unseen_house']
 
     # Setup the validation data
     val_envs = {split: (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split],
