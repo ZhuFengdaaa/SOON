@@ -73,6 +73,7 @@ class BaseAgent(object):
                         self.results[trajs[index]['instr_id']]['obj_heading'] = pre_heading[index].tolist()
                         self.results[trajs[index]['instr_id']]['obj_elevation'] = pre_elevation[index].tolist()
         else:   # Do a full round
+            cnt = 0
             while True:
                 if args.dataset == 'R2R':
                     for traj in self.rollout(**kwargs):
@@ -86,15 +87,33 @@ class BaseAgent(object):
                 elif args.dataset == 'SOON':
                     if not args.compute_bbox:
                         trajs, pre_heading, pre_elevation = self.rollout(**kwargs)
-                        for index in range(len(trajs)):
-                            if trajs[index]['instr_id'] in self.results:
-                                looped = True
-                            else:
+                        if args.submit:
+                            for index in range(len(trajs)):
+                                # if trajs[index]['instr_id'] in self.results:
+                                #     looped = True
+                                # else:
+                                cnt += 1
                                 self.loss = 0
-                                self.results[trajs[index]['instr_id']] = {}
-                                self.results[trajs[index]['instr_id']]['path'] = trajs[index]['path']
-                                self.results[trajs[index]['instr_id']]['obj_heading'] = pre_heading[index].tolist()
-                                self.results[trajs[index]['instr_id']]['obj_elevation'] = pre_elevation[index].tolist()
+                                if trajs[index]['instr_id'] not in self.results:
+                                    self.results[trajs[index]['instr_id']] = []
+                                new_result = {}
+                                new_result['path'] = trajs[index]['path']
+                                new_result['obj_heading'] = pre_heading[index].tolist()
+                                new_result['obj_elevation'] = pre_elevation[index].tolist()
+                                self.results[trajs[index]['instr_id']].append(new_result)
+                                # print(cnt, len(self.nav_graph.env.data), cnt >= len(self.nav_graph.env.data))
+                                if cnt >= len(self.nav_graph.env.data):
+                                    looped = True
+                        else:
+                            for index in range(len(trajs)):
+                                if trajs[index]['instr_id'] in self.results:
+                                    looped = True
+                                else:
+                                    self.loss = 0
+                                    self.results[trajs[index]['instr_id']] = {}
+                                    self.results[trajs[index]['instr_id']]['path'] = trajs[index]['path']
+                                    self.results[trajs[index]['instr_id']]['obj_heading'] = pre_heading[index].tolist()
+                                    self.results[trajs[index]['instr_id']]['obj_elevation'] = pre_elevation[index].tolist()
                     else:
                         trajs, pre_bboxes, pre_num_headings, pre_num_elevations = self.rollout(**kwargs)
                         for index in range(len(trajs)):
@@ -1049,7 +1068,7 @@ class Seq2SeqAgent(BaseAgent):
             elif feedback == 'sample':
                 if args.ml_weight != 0:
                     self.feedback = 'teacher'
-                    self.rollout(train_ml=args.ml_weight, train_rl=False, **kwargs)
+                    self.rollout(trvain_ml=args.ml_weight, train_rl=False, **kwargs)
                 self.feedback = 'sample'
                 self.rollout(train_ml=None, train_rl=True, **kwargs)
             else:
@@ -1099,4 +1118,3 @@ class Seq2SeqAgent(BaseAgent):
         for param in self.all_tuple:
             recover_state(*param)
         return states['encoder']['epoch'] - 1
-

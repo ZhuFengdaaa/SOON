@@ -47,17 +47,30 @@ class Evaluation(object):
                 if scans is not None:
                     if DATASET == 'R2R' and item['scan'] not in scans:
                         continue
-                    elif DATASET == 'SOON' and item['bboxes'][0]['scan'] not in scans:
-                        continue
-                self.gt[str(item['path_id'])] = copy.deepcopy(item)
-                self.scans.append(item['scan'])
-                if DATASET == 'SOON':
-                    new_instrs = []
-                    instructions = copy.deepcopy(item['instructions'])
-                    for i in range(len(instructions)):
-                        new_instrs.append(instructions[i][4])
-                    self.gt[str(item['path_id'])]['instructions'] = new_instrs
-                self.instr_ids += ['%s_%d' % (item['path_id'], i) for i in range(len(item['instructions']))]
+                    elif DATASET == 'SOON':
+                        if len(item['bboxes']) > 0:
+                            if item['bboxes'][0]['scan'] not in scans:
+                                continue
+                        else:
+                            if item['scan'] not in scans:
+                                continue
+                if args.submit:
+                    if item['instr_id'] not in self.gt:
+                        self.gt[item['instr_id']] = copy.deepcopy(item)
+                        self.gt[item['instr_id']]["path"] = [item["path"]]
+                    else:
+                        self.gt[item['instr_id']]["path"].append(item["path"])
+                    self.scans.append(item['scan'])
+                else:
+                    self.gt[str(item['path_id'])] = copy.deepcopy(item)
+                    self.scans.append(item['scan'])
+                    if DATASET == 'SOON':
+                        new_instrs = []
+                        instructions = copy.deepcopy(item['instructions'])
+                        for i in range(len(instructions)):
+                            new_instrs.append(instructions[i][4])
+                        self.gt[str(item['path_id'])]['instructions'] = new_instrs
+                    self.instr_ids += ['%s_%d' % (item['path_id'], i) for i in range(len(item['instructions']))]
             with open(f"eval1_{split}.json", "w") as f:
                 json.dump(split_data, f)
         self.scans = set(self.scans)
@@ -182,6 +195,174 @@ class Evaluation(object):
             self.distances[gt['scan']][start][goal] - self.distances[gt['scan']][final_position][goal]
         )
 
+    def _score_item_submit(self, instr_id, path, heading=None, elevation=None, pre_bbox=None, pre_num_heading=None, pre_num_elevation=None):
+        heading = np.array(heading)
+        elevation = np.array(elevation)
+        ''' Calculate error based on the final position in trajectory, and also 
+            the closest position (oracle stopping rule).
+            The path contains [view_id, angle, vofv] '''
+        # gt = self.gt[instr_id]
+        # start = gt['path'][0]
+        # assert start == path[0][0], 'Result trajectories should include the start position'
+        # goal = gt['path'][-1]
+        # final_position = path[-1][0]    # the first of [view_id, angle, vofv]
+        # nearest_position = self._get_nearest(gt['scan'], goal, path)
+        heading = np.array(heading)
+        elevation = np.array(elevation)
+        gt = self.gt[instr_id]
+        # start = gt['path'][0]
+        starts = [gt_path[0] for gt_path in gt['path']]
+        path_idx = starts.index(path[0][0])
+        gt_path = gt['path'][path_idx]
+        start = starts[path_idx]
+        assert start == path[0][0], 'Result trajectories should include the start position'
+        goal = gt_path[-1]
+        final_position = path[-1][0]    # the first of [view_id, angle, vofv]
+        nearest_position = self._get_nearest(gt['scan'], goal, path)
+
+        pre_point = Point(heading, elevation)
+
+        if self.dataset == 'SOON':
+            if not args.compute_bbox:
+                pre_point = Point(heading, elevation)
+                # pre_point = np.array([heading, elevation]).reshape(1, 2)
+                success = False
+                for bbox in gt['bboxes']:
+                    if bbox['image_id'] == final_position:
+                        goal = final_position
+                        gt_heading = bbox['heading']
+                        gt_elevation = bbox['elevation']
+                        gt_point = Point(gt_heading, gt_elevation)
+                        gt_poly = Polygon([(bbox['target']['left_top']['heading'], bbox['target']['left_top']['elevation']),
+                                           (bbox['target']['right_top']['heading'], bbox['target']['right_top']['elevation']),
+                                           (bbox['target']['right_bottom']['heading'], bbox['target']['right_bottom']['elevation']),
+                                           (bbox['target']['left_bottom']['heading'], bbox['target']['left_bottom']['elevation'])])
+                        # gt_poly = mlpath.Path(np.array([(bbox['target']['left_top']['heading'], bbox['target']['left_top']['elevation']),
+                        #                      (bbox['target']['right_top']['heading'], bbox['target']['right_top']['elevation']),
+                        #                      (bbox['target']['right_bottom']['heading'], bbox['target']['right_bottom']['elevation']),
+                        #                      (bbox['target']['left_bottom']['heading'], bbox['target']['left_bottom']['elevation'])]))
+
+                        self.scores['heading_errors'].append(math.fabs((gt_heading - heading)))
+                        self.scores['elevation_errors'].append(math.fabs((gt_elevation - elevation)))
+                        if gt_poly.contains(pre_point):
+                            # print(pre_point, gt_point)
+                            # point_inds = (gt_poly.contains_points(pre_point) > 0).nonzero()[0]
+                            # if point_inds.shape[0] > 0:
+                            self.scores['det_success_num'].append(1.)
+                            # self.scores['point_det_errors'].append(pre_point.distance(gt_point))
+                            self.scores['point_det_errors'].append(math.hypot(gt_heading - heading, gt_elevation - elevation))
+                            success = True
+                        break
+                if not success:
+                    self.scores['det_success_num'].append(0.)
+            else:
+                if pre_bbox is not None:
+                    pre_bbox = pre_bbox.reshape((1, 4))
+                    success = False
+                    for bbox in gt['bboxes']:
+                        if bbox['image_id'] == final_position:
+                            goal = final_position
+                            gt_bboxes_2d = np.array([bbox['mouse_left_top']['x'], bbox['mouse_left_top']['y'],
+                                                     bbox['mouse_right_bottom']['x'], bbox['mouse_right_bottom']['y']]).reshape((1, 4))
+                            overlap = self._image_bbox_overlap(gt_bboxes_2d, pre_bbox)   # 1 x 1
+                            self.scores['bbox_iou'].append(overlap[0, 0])
+                            if overlap[0, 0] > 0.5 and pre_num_heading == bbox['num_heading'] and \
+                                    pre_num_elevation == bbox['num_elevation']:
+                                self.scores['det_success_num'].append(1.)
+                                success = True
+                                break
+                    if not success:
+                        self.scores['det_success_num'].append(0.)
+
+        self.scores['nav_errors'].append(self.distances[gt['scan']][final_position][goal])
+        self.scores['oracle_errors'].append(self.distances[gt['scan']][nearest_position][goal])
+
+        self.scores['trajectory_steps'].append(len(path)-1)
+        distance = 0 # Work out the length of the path in meters
+        prev = path[0]
+        for curr in path[1:]:
+            distance += self.distances[gt['scan']][prev[0]][curr[0]]
+            prev = curr
+        self.scores['trajectory_lengths'].append(distance)
+        self.scores['shortest_lengths'].append(
+            self.distances[gt['scan']][start][goal]
+        )
+        self.scores['goal_progress'].append(
+            self.distances[gt['scan']][start][goal] - self.distances[gt['scan']][final_position][goal]
+        )
+
+    def submit_score(self, output_file, env_name=None):
+        ''' Evaluate each agent trajectory based on how close it got to the goal location '''
+        self.scores = defaultdict(list)
+        instr_ids = set(self.instr_ids)
+        if type(output_file) is str:
+            with open(output_file) as f:
+                results = json.load(f)
+        else:
+            results = output_file
+        for item in results:
+            # Check against expected ids
+            if self.dataset == 'R2R':
+                self._score_item_submit(item['instr_id'], item['trajectory'])
+            elif self.dataset == 'SOON':
+                if not args.compute_bbox:
+                    for trajectory in item['trajectory']:
+                        self._score_item_submit(item['instr_id'], trajectory['path'],
+                                        trajectory['obj_heading'],
+                                        trajectory['obj_elevation'])
+                else:
+                    for trajectory in item['trajectory']:
+                        self._score_item_submit(item['instr_id'], trajectory['path'],
+                                        pre_bbox=trajectory['pre_bbox'],
+                                        pre_num_heading=trajectory['pre_num_heading'],
+                                        pre_num_elevation=trajectory['pre_num_elevation'])
+        if 'train' not in self.splits and self.dataset != 'SOON':  # Exclude the training from this. (Because training eval may be partial)
+            assert len(instr_ids) == 0, 'Missing %d of %d instruction ids from %s - not in %s'\
+                           % (len(instr_ids), len(self.instr_ids), ",".join(self.splits), output_file)
+            assert len(self.scores['nav_errors']) == len(self.instr_ids)
+
+        score_summary = {
+            'nav_error': np.average(self.scores['nav_errors']),
+            'oracle_error': np.average(self.scores['oracle_errors']),
+            'steps': np.average(self.scores['trajectory_steps']),
+            'lengths': np.average(self.scores['trajectory_lengths'])
+        }
+        if self.dataset == 'SOON':
+            if not args.compute_bbox:
+                score_summary['heading_errors'] = np.average(self.scores['heading_errors'])
+                score_summary['elevation_errors'] = np.average(self.scores['elevation_errors'])
+                score_summary['point_det_errors'] = np.average(self.scores['point_det_errors'])
+                score_summary['goal_progress'] = np.average(self.scores['goal_progress'])
+            else:
+                score_summary['bbox_iou'] = np.average(self.scores['bbox_iou'])
+
+        eps = 1e-9
+        if self.dataset == 'SOON':
+            det_num_successes = len([i for i in self.scores['det_success_num'] if i > 0.])
+            score_summary['det_success_rate'] = float(det_num_successes) / float(len(self.scores['det_success_num'])+eps)
+            num_successes = len([i for i in self.scores['nav_errors'] if i < self.error_margin])
+            score_summary['nav_success_rate'] = float(num_successes)/float(len(self.scores['nav_errors'])+eps)
+        else:
+            num_successes = len([i for i in self.scores['nav_errors'] if i < self.error_margin])
+            score_summary['success_rate'] = float(num_successes) / float(len(self.scores['nav_errors'])+eps)
+
+        oracle_successes = len([i for i in self.scores['oracle_errors'] if i < self.error_margin])
+        score_summary['oracle_rate'] = float(oracle_successes)/float(len(self.scores['oracle_errors'])+eps)
+
+        spl = [float(error < self.error_margin) * l / max(l, p, 0.01)
+            for error, p, l in
+            zip(self.scores['nav_errors'], self.scores['trajectory_lengths'], self.scores['shortest_lengths'])
+        ]
+        score_summary['spl'] = np.average(spl)
+        if self.dataset == 'SOON':
+            if not args.one_image:
+                success_rate = np.array(self.scores['det_success_num']) * np.array(spl)
+                score_summary['success_rate'] = np.average(success_rate)
+            else:
+                score_summary['success_rate'] = score_summary['det_success_rate']
+            score_summary['goal_progress'] = np.average(self.scores['goal_progress'])
+        return score_summary, self.scores
+    
     def score(self, output_file, env_name=None):
         ''' Evaluate each agent trajectory based on how close it got to the goal location '''
         self.scores = defaultdict(list)
@@ -227,17 +408,18 @@ class Evaluation(object):
             else:
                 score_summary['bbox_iou'] = np.average(self.scores['bbox_iou'])
 
+        eps = 1e-9
         if self.dataset == 'SOON':
             det_num_successes = len([i for i in self.scores['det_success_num'] if i > 0.])
-            score_summary['det_success_rate'] = float(det_num_successes) / float(len(self.scores['det_success_num']))
+            score_summary['det_success_rate'] = float(det_num_successes) / float(len(self.scores['det_success_num'])+eps)
             num_successes = len([i for i in self.scores['nav_errors'] if i < self.error_margin])
-            score_summary['nav_success_rate'] = float(num_successes)/float(len(self.scores['nav_errors']))
+            score_summary['nav_success_rate'] = float(num_successes)/float(len(self.scores['nav_errors'])+eps)
         else:
             num_successes = len([i for i in self.scores['nav_errors'] if i < self.error_margin])
-            score_summary['success_rate'] = float(num_successes) / float(len(self.scores['nav_errors']))
+            score_summary['success_rate'] = float(num_successes) / float(len(self.scores['nav_errors'])+eps)
 
         oracle_successes = len([i for i in self.scores['oracle_errors'] if i < self.error_margin])
-        score_summary['oracle_rate'] = float(oracle_successes)/float(len(self.scores['oracle_errors']))
+        score_summary['oracle_rate'] = float(oracle_successes)/float(len(self.scores['oracle_errors'])+eps)
 
         spl = [float(error < self.error_margin) * l / max(l, p, 0.01)
             for error, p, l in
@@ -311,7 +493,6 @@ def eval_seq2seq():
 
 if __name__ == '__main__':
     eval_simple_agents()
-
 
 
 
